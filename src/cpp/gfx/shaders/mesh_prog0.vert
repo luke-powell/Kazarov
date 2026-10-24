@@ -146,8 +146,13 @@ void blend(inout vec3 position, inout vec3 normal) {
 
 layout(location = 4) out vec3 v_air_transmission;
 layout(location = 5) out vec3 v_air_light;
+layout(location = 6) out vec2 v_tree_coverage;
+layout(location = 7) out vec3 v_terrain_uv;
+layout(location = 8) out vec3 v_terrain_normal;
 
 void main() {
+    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);
+    v_tree_coverage=vec2(0.0,1.0);
     v_air_transmission=vec3(1.0);v_air_light=vec3(0.0);
     uint F = p0.flags;
     uint T = pc.face;

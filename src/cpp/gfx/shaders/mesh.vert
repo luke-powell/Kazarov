@@ -65,6 +65,9 @@ layout(location = 3) flat out vec4 v_fog_mode;
 
 layout(location = 4) out vec3 v_air_transmission;
 layout(location = 5) out vec3 v_air_light;
+layout(location = 6) out vec2 v_tree_coverage;
+layout(location = 7) out vec3 v_terrain_uv;
+layout(location = 8) out vec3 v_terrain_normal;
 out float gl_ClipDistance[2];
 
 // Integrate a plane-parallel atmosphere with exponential Rayleigh (8 km) and
@@ -86,10 +89,15 @@ void atmosphere() {
     float mu=dot(direction,sun), g=0.76;
     float phaseR=3.0/(16.0*3.14159265)*(1.0+mu*mu);
     float phaseM=(1.0-g*g)/(4.0*3.14159265*pow(1.0+g*g-2.0*g*mu,1.5));
-    float ds=distance/16.0;
+    // Density changes with altitude, not horizontal distance. Four midpoint
+    // samples suffice for nearby foliage; retain finer integration for rays
+    // crossing multiple aerosol scale heights. This changes numerical work,
+    // not the physical extinction or the visible horizon.
+    int samples=int(clamp(ceil(abs(ray.y)/1200.0*4.0),4.0,16.0));
+    float ds=distance/float(samples);
     // Solar irradiance in the renderer's scene exposure, driven by the game's light.
     vec3 solar=mc.light_color[0].rgb*10.0;
-    for(int i=0;i<16;i++) {
+    for(int i=0;i<samples;i++) {
         float altitude=max(0.0,camera.y*metres+direction.y*ds*(float(i)+0.5));
         vec3 r=betaR*exp(-altitude/8000.0);
         vec3 m=betaM*exp(-altitude/1200.0);
@@ -104,6 +112,8 @@ void atmosphere() {
 }
 
 void main() {
+    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);
+    v_tree_coverage=vec2(0.0,1.0);
     atmosphere();
     vec4 position = vec4(a_position, 1.0);
     vec4 clip     = mc.mvp * position;
@@ -118,6 +128,25 @@ void main() {
         clip.xy = ndc * clip.w;
     }
     gl_Position   = clip;
+    if((mc.flags & 1024u)!=0u) {
+        float d=length(a_position-mc.clip_plane[0].xyz);
+        float a=smoothstep(1800.0,2600.0,d),b=smoothstep(5000.0,7000.0,d);
+        vec3 weights=vec3(1.0-a,a*(1.0-b),b);
+        uint available=uint(mc.world_uv[0].y);
+        for(int i=0;i<3;i++)if((available&(1u<<uint(i)))==0u)weights[i]=0.0;
+        float sum=weights.x+weights.y+weights.z;
+        if(sum<0.0001) {
+            weights=vec3(0.0);
+            for(int i=2;i>=0;i--)if((available&(1u<<uint(i)))!=0u){weights[i]=1.0;break;}
+        } else weights/=sum;
+        int level=int(mc.world_uv[0].x);
+        float begin=level==0?0.0:level==1?weights.x:weights.x+weights.y;
+        // Every instance survives until its own projected height is subpixel.
+        float height=round(a_color.r*255.0)+256.0*round(a_color.g*255.0);
+        float pixels=height*mc.world_uv[0].z/max(clip.w,1.0);
+          float coverage=smoothstep(0.15,0.35,pixels)*mc.world_uv[0].w;
+        v_tree_coverage=vec2(begin,begin+weights[level])*coverage;
+    }
 
     gl_ClipDistance[0] = (mc.flags & kClip0) != 0u ? dot(mc.clip_plane[0], position) : 1.0;
     gl_ClipDistance[1] = (mc.flags & kClip1) != 0u ? dot(mc.clip_plane[1], position) : 1.0;
@@ -141,8 +170,24 @@ void main() {
 
     // Back to GS bytes, saturated as VU1 saturates its colour output.
     v_color = clamp(vec4(color, alpha) / kModulate, 0.0, 1.0);
+    if((mc.flags & 2048u)!=0u) {
+        float height=round(a_color.r*255.0)+256.0*round(a_color.g*255.0);
+        float pixels=height*mc.world_uv[0].z/max(clip.w,1.0);
+        float regional=smoothstep(mc.world_uv[1].w,mc.world_uv[1].w*1.4,length(a_position-mc.clip_plane[0].xyz));
+        if ((mc.flags & 4096u)!=0u) {
+            // Persistent forest ground coverage must not disappear while the
+            // independent object queue is still generating visible trees.
+            v_color.a *= a_color.a*kModulate*(1.0-smoothstep(0.15,0.35,pixels));
+        } else {
+            v_color.a *= (1.0-smoothstep(0.75,1.5,pixels))*mc.world_uv[0].w*(1.0-regional);
+        }
+    }
     v_uv    = (mc.flags & kWorldUv) != 0u ? vec2(dot(mc.world_uv[0], position), dot(mc.world_uv[1], position)) :
               (mc.flags & kScreenUv) != 0u ? clip.xy / clip.w * 0.5 + 0.5 + a_uv : a_uv;
+    if((mc.flags & 8192u)!=0u){
+        v_terrain_uv=vec3(v_uv.x,a_position.y*mc.world_uv[0].x,v_uv.y);
+        v_terrain_normal=a_normal;
+    }
     v_fog_mode = vec4(mc.fog.w, mc.fog.z, 0.0, 1.0);
     if ((mc.flags & kFog) == 0u) {
         v_fog = vec4(1.0, 0.0, 0.0, 0.0);

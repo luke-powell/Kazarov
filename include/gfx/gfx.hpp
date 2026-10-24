@@ -477,12 +477,16 @@ enum MeshFlags : uint32_t {
     // normalised units. A display render's interpolated camera moves the sample with the vertex.
     kMeshScreenUv = 1u << 6,
     kMeshWorldUv = 1u << 7,
+    kMeshTerrainTriplanar = 1u << 13,
     // Implied by DrawMeshProg0 and DrawMeshImmediateProg0; a plain draw that sets it draws plain.
     kMeshProg0 = 1u << 8,
     // Single-scattering atmosphere. clip_plane[0]: camera in model space, w=metres/unit;
     // clip_plane[1]: direction toward sun, w=sea-level aerosol scattering per metre.
     // Independent of the GS fog flag and its near/far limits.
     kMeshAtmosphere = 1u << 9,
+    kMeshTreeLod = 1u << 10, // world_uv[0]: level, available mask, pixel projection, stream fade
+    kMeshCanopy = 1u << 11, // complementary aggregate coverage when trees become subpixel
+    kMeshRegionalCanopy = 1u << 12, // density-integrated continental canopy
 };
 
 // Vu_prog0's flags word, as mgCVisualMDT::CreateRenderInfoPacket sets it.

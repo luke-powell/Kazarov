@@ -34,6 +34,9 @@ layout(location = 2) in vec4 v_fog;
 layout(location = 3) flat in vec4 v_fog_mode;
 layout(location = 4) in vec3 v_air_transmission;
 layout(location = 5) in vec3 v_air_light;
+layout(location = 6) in vec2 v_tree_coverage;
+layout(location = 7) in vec3 v_terrain_uv;
+layout(location = 8) in vec3 v_terrain_normal;
 
 layout(location = 0, index = 0) out vec4 o_color;
 layout(location = 0, index = 1) out vec4 o_factor;
@@ -56,16 +59,16 @@ float Bilerp(vec4 gathered, vec2 f) {
     return mix(mix(gathered.w, gathered.z, f.x), mix(gathered.x, gathered.y, f.x), f.y);
 }
 
-vec2 Footprint() {
-    return fract(v_uv * vec2(textureSize(TEXTURE, 0)) - 0.5);
+vec2 Footprint(vec2 uv) {
+    return fract(uv * vec2(textureSize(TEXTURE, 0)) - 0.5);
 }
 
-// The footprint's shared corner. Gathering at v_uv itself lets the hardware's fixed-point pick of
-// the 2x2 disagree with Footprint() where a sample lands on a texel centre, which swaps in the
+// The footprint's shared corner. Gathering at uv itself lets the hardware's fixed-point pick of
+// the 2x2 disagree with Footprint(uv) where a sample lands on a texel centre, which swaps in the
 // neighbouring footprint under the old weights.
-vec2 FootprintCorner() {
+vec2 FootprintCorner(vec2 uv) {
     vec2 size = vec2(textureSize(TEXTURE, 0));
-    return (floor(v_uv * size - 0.5) + 1.0) / size;
+    return (floor(uv * size - 0.5) + 1.0) / size;
 }
 
 vec4 PaletteEntry(float index) {
@@ -73,26 +76,26 @@ vec4 PaletteEntry(float index) {
 }
 
 // The GS looks the CLUT up before filtering, so a filtered palette texture blends four entries.
-vec4 SamplePalette() {
+vec4 SamplePalette(vec2 uv) {
     if ((pc.flags & kLinear) == 0u) {
-        return PaletteEntry(texture(TEXTURE, v_uv).r);
+        return PaletteEntry(texture(TEXTURE, uv).r);
     }
-    vec4 index = textureGather(TEXTURE, FootprintCorner(), 0);
-    vec2 f     = Footprint();
+    vec4 index = textureGather(TEXTURE, FootprintCorner(uv), 0);
+    vec2 f     = Footprint(uv);
     return mix(mix(PaletteEntry(index.w), PaletteEntry(index.z), f.x), mix(PaletteEntry(index.x), PaletteEntry(index.y), f.x), f.y);
 }
 
 // TEXA expands alpha per texel before filtering too: with AEM a filtered edge between black and
 // coloured texels fades out instead of taking TA0 throughout.
-vec4 SampleRgba() {
-    vec4 t = texture(TEXTURE, v_uv);
+vec4 SampleRgba(vec2 uv) {
+    vec4 t = texture(TEXTURE, uv);
     if ((pc.flags & kTexa) != 0u) {
         float ta0 = float(pc.alpha >> 24) / 128.0;
         bool  aem = (pc.flags & kAem) != 0u;
         if (aem && (pc.flags & kLinear) != 0u) {
-            vec2 corner = FootprintCorner();
+            vec2 corner = FootprintCorner(uv);
             vec4 sum    = textureGather(TEXTURE, corner, 0) + textureGather(TEXTURE, corner, 1) + textureGather(TEXTURE, corner, 2);
-            t.a      = Bilerp(vec4(greaterThan(sum, vec4(0.0))) * ta0, Footprint());
+            t.a      = Bilerp(vec4(greaterThan(sum, vec4(0.0))) * ta0, Footprint(uv));
         } else {
             t.a = aem && t.r + t.g + t.b == 0.0 ? 0.0 : ta0;
         }
@@ -125,13 +128,27 @@ bool AlphaPasses(float alpha) {
 }
 
 void main() {
+    // Complementary screen-door masks preserve opaque depth writes. The same
+    // sample belongs to exactly one representation throughout an LOD blend.
+    const int bayer[16]=int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);
+    ivec2 pixel=ivec2(gl_FragCoord.xy)&3;
+    float threshold=(float(bayer[pixel.y*4+pixel.x])+0.5)/16.0;
+    if(threshold<v_tree_coverage.x || threshold>=v_tree_coverage.y)discard;
     // Alpha is carried in GS units over 128 (1.0 = 0x80) so the alpha test and blend factor see
     // values above 0x80 before the attachment saturates them.
     vec4 color;
     if (kTextureMode == 0) {
         color = vec4(v_color.rgb, v_color.a * kModulate);
     } else {
-        vec4 t = kTextureMode == 1 ? SampleRgba() : SamplePalette();
+        vec4 t;
+        if(dot(v_terrain_normal,v_terrain_normal)>.1){
+            vec3 weights=pow(abs(normalize(v_terrain_normal)),vec3(4.0));
+            weights/=max(dot(weights,vec3(1.0)),.0001);
+            vec4 tx=kTextureMode==1?SampleRgba(v_terrain_uv.zy):SamplePalette(v_terrain_uv.zy);
+            vec4 ty=kTextureMode==1?SampleRgba(v_terrain_uv.xz):SamplePalette(v_terrain_uv.xz);
+            vec4 tz=kTextureMode==1?SampleRgba(v_terrain_uv.xy):SamplePalette(v_terrain_uv.xy);
+            t=tx*weights.x+ty*weights.y+tz*weights.z;
+        }else t=kTextureMode==1?SampleRgba(v_uv):SamplePalette(v_uv);
         color  = vec4(t.rgb * v_color.rgb * kModulate, t.a * v_color.a * kModulate);
     }
 
