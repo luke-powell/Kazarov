@@ -479,6 +479,10 @@ enum MeshFlags : uint32_t {
     kMeshWorldUv = 1u << 7,
     // Implied by DrawMeshProg0 and DrawMeshImmediateProg0; a plain draw that sets it draws plain.
     kMeshProg0 = 1u << 8,
+    // Single-scattering atmosphere. clip_plane[0]: camera in model space, w=metres/unit;
+    // clip_plane[1]: direction toward sun, w=sea-level aerosol scattering per metre.
+    // Independent of the GS fog flag and its near/far limits.
+    kMeshAtmosphere = 1u << 9,
 };
 
 // Vu_prog0's flags word, as mgCVisualMDT::CreateRenderInfoPacket sets it.

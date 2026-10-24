@@ -144,7 +144,11 @@ void blend(inout vec3 position, inout vec3 normal) {
     normal = N;
 }
 
+layout(location = 4) out vec3 v_air_transmission;
+layout(location = 5) out vec3 v_air_light;
+
 void main() {
+    v_air_transmission=vec3(1.0);v_air_light=vec3(0.0);
     uint F = p0.flags;
     uint T = pc.face;
 

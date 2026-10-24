@@ -32,6 +32,8 @@ layout(location = 1) in vec2 v_uv;
 layout(location = 2) in vec4 v_fog;
 // xy: near/far limits; z: -2 constant, -1 direct 2D, 0 DC1 mesh, 1 DC2 prog0; w: constant F.
 layout(location = 3) flat in vec4 v_fog_mode;
+layout(location = 4) in vec3 v_air_transmission;
+layout(location = 5) in vec3 v_air_light;
 
 layout(location = 0, index = 0) out vec4 o_color;
 layout(location = 0, index = 1) out vec4 o_factor;
@@ -150,6 +152,8 @@ void main() {
         }
         color.rgb = mix(unpackUnorm4x8(pc.fog_color).rgb, color.rgb, fog);
     }
+
+    color.rgb=color.rgb*v_air_transmission+v_air_light;
 
     if (kAlphaTest && !AlphaPasses(color.a)) {
         discard;
