@@ -166,7 +166,7 @@ void main() {
             tree_atlas_uv=(vec2(angle,elevation)+vec2(corner.x+1.0,1.0-corner.y)*.5)/vec2(8.0,3.0);
         }
     }
-    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);v_terrain_native=(mc.flags & 524288u)!=0u ? 1u : 0u;
+    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);v_terrain_native=((mc.flags & 524288u)!=0u ? 1u : 0u) | ((mc.flags & 1048576u)!=0u ? 2u : 0u);
     v_tree_coverage=vec2(0.0,1.0);
     atmosphere();
     vec4 position = vec4(a_position, 1.0);

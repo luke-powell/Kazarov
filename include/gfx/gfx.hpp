@@ -479,6 +479,7 @@ enum MeshFlags : uint32_t {
     kMeshWorldUv = 1u << 7,
     kMeshTerrainTriplanar = 1u << 13,
     kMeshTerrainNative = 1u << 19, // preserve authored texture orientation and phase
+    kMeshTerrainMirror = 1u << 20, // seamless mirrored use of non-tileable native cliff art
     kMeshGrass = 1u << 14, // distance-dithered native understory
     kMeshInstanced = 1u << 15, // Vertex3D instance stream: root, (cos*scale,sin*scale,scale), height colour
     kMeshTreeBillboard = 1u << 16, // native-model atlas, complementary 2..4 logical-pixel LOD blend

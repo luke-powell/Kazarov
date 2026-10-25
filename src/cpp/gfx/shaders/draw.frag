@@ -115,7 +115,15 @@ vec4 TerrainTile(vec2 uv, vec2 cell, vec2 dx, vec2 dy) {
     return kTextureMode==1?textureGrad(TEXTURE,uv,rotation*dx,rotation*dy):SamplePalette(uv);
 }
 
+vec2 NativeUv(vec2 uv) {
+    if((v_terrain_native&2u)==0u)return uv;
+    // Preserve the source artwork and texel scale. Mirror at its boundaries
+    // because the authored cliff-top chart is clamped, not a seamless tile.
+    vec2 halfTexel=.5/vec2(textureSize(TEXTURE,0));
+    return clamp(1.0-abs(mod(uv,2.0)-1.0),halfTexel,1.0-halfTexel);
+}
 vec4 TerrainSample(vec2 uv) {
+    uv=NativeUv(uv);
     if(v_terrain_native!=0u)return kTextureMode==1?SampleRgba(uv):SamplePalette(uv);
     // Preserve the retail texel scale, but smoothly blend independent phase and
     // orientation over single-tile neighbourhoods. Mips suppress distant shimmer.
@@ -170,7 +178,7 @@ void main() {
             vec4 ty=TerrainSample(v_terrain_uv.xz);
             vec4 tz=TerrainSample(v_terrain_uv.xy);
             t=tx*weights.x+ty*weights.y+tz*weights.z;
-        }else t=kTextureMode==1?SampleRgba(v_uv):SamplePalette(v_uv);
+        }else t=kTextureMode==1?SampleRgba(NativeUv(v_uv)):SamplePalette(NativeUv(v_uv));
         color  = vec4(t.rgb * v_color.rgb * kModulate, t.a * v_color.a * kModulate);
     }
 
