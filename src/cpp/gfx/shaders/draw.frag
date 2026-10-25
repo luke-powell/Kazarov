@@ -103,6 +103,26 @@ vec4 SampleRgba(vec2 uv) {
     return t;
 }
 
+vec4 TerrainTile(vec2 uv, vec2 cell, vec2 dx, vec2 dy) {
+    // Periodic hash agrees across chunk origins and floating-origin rebases.
+    uvec2 c=uvec2(ivec2(cell)&ivec2(1023));
+    uint h=c.x*1597334677u+c.y*3812015801u+17u;
+    h=(h^(h>>16))*2246822519u;h^=h>>13;
+    float angle=float(h&65535u)*(6.28318530718/65536.0);
+    mat2 rotation=mat2(cos(angle),sin(angle),-sin(angle),cos(angle));
+    uv=rotation*(uv-cell)+vec2(float((h>>8)&255u),float((h>>16)&255u))/256.0;
+    return kTextureMode==1?textureGrad(TEXTURE,uv,rotation*dx,rotation*dy):SamplePalette(uv);
+}
+
+vec4 TerrainSample(vec2 uv) {
+    // Preserve the retail texel scale, but smoothly blend independent phase and
+    // orientation over single-tile neighbourhoods. Mips suppress distant shimmer.
+    vec2 cell=floor(uv), f=fract(uv);f=f*f*(3.0-2.0*f);
+    vec2 dx=dFdx(uv),dy=dFdy(uv);
+    return mix(mix(TerrainTile(uv,cell,dx,dy),TerrainTile(uv,cell+vec2(1,0),dx,dy),f.x),
+               mix(TerrainTile(uv,cell+vec2(0,1),dx,dy),TerrainTile(uv,cell+vec2(1,1),dx,dy),f.x),f.y);
+}
+
 bool AlphaPasses(float alpha) {
     int  value = int(alpha * 128.0 + 0.5);
     int  ref   = int(pc.alpha & 0xFFu);
@@ -144,9 +164,9 @@ void main() {
         if(dot(v_terrain_normal,v_terrain_normal)>.1){
             vec3 weights=pow(abs(normalize(v_terrain_normal)),vec3(4.0));
             weights/=max(dot(weights,vec3(1.0)),.0001);
-            vec4 tx=kTextureMode==1?SampleRgba(v_terrain_uv.zy):SamplePalette(v_terrain_uv.zy);
-            vec4 ty=kTextureMode==1?SampleRgba(v_terrain_uv.xz):SamplePalette(v_terrain_uv.xz);
-            vec4 tz=kTextureMode==1?SampleRgba(v_terrain_uv.xy):SamplePalette(v_terrain_uv.xy);
+            vec4 tx=TerrainSample(v_terrain_uv.zy);
+            vec4 ty=TerrainSample(v_terrain_uv.xz);
+            vec4 tz=TerrainSample(v_terrain_uv.xy);
             t=tx*weights.x+ty*weights.y+tz*weights.z;
         }else t=kTextureMode==1?SampleRgba(v_uv):SamplePalette(v_uv);
         color  = vec4(t.rgb * v_color.rgb * kModulate, t.a * v_color.a * kModulate);
