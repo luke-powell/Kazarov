@@ -478,6 +478,11 @@ enum MeshFlags : uint32_t {
     kMeshScreenUv = 1u << 6,
     kMeshWorldUv = 1u << 7,
     kMeshTerrainTriplanar = 1u << 13,
+    kMeshGrass = 1u << 14, // distance-dithered native understory
+    kMeshInstanced = 1u << 15, // Vertex3D instance stream: root, (cos*scale,sin*scale,scale), height colour
+    kMeshTreeBillboard = 1u << 16, // native-model atlas, complementary 2..4 logical-pixel LOD blend
+    kMeshTreeDetail = 1u << 17, // full model paired with the distant billboard
+    kMeshRingFoliage = 1u << 18,
     // Implied by DrawMeshProg0 and DrawMeshImmediateProg0; a plain draw that sets it draws plain.
     kMeshProg0 = 1u << 8,
     // Single-scattering atmosphere. clip_plane[0]: camera in model space, w=metres/unit;
@@ -612,6 +617,9 @@ void Draw2D(Primitive primitive, std::span<const Vertex2D> vertices, const Textu
 void DrawMesh(MeshHandle mesh, uint32_t first_index, uint32_t index_count, const MeshConstants &constants,
               const TextureBinding &texture, const DrawState &state,
               const MeshTransform *transform = nullptr);
+void DrawMeshInstanced(MeshHandle mesh, uint32_t first_index, uint32_t index_count, MeshHandle instances,
+                       uint32_t instance_count, const MeshConstants &constants, const TextureBinding &texture,
+                       const DrawState &state, const MeshTransform *transform = nullptr, uint32_t first_instance = 0);
 // A triangle list that lives for this frame only (cloth, water, anything rebuilt per frame).
 void DrawMeshImmediate(std::span<const Vertex3D> vertices, std::span<const uint32_t> indices,
                        const MeshConstants &constants, const TextureBinding &texture, const DrawState &state,

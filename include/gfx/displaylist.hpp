@@ -63,6 +63,9 @@ struct MeshEntry {
     uint32_t              record = 0;
     int32_t               prog0 = -1;    // index into DisplayList::prog0_blocks, or -1 for a plain draw
     int32_t               palette = -1;  // index into DisplayList::palettes, or -1
+    MeshHandle            instances = kNullMesh;
+    uint32_t              instance_count = 1;
+    uint32_t              first_instance = 0;
 };
 
 struct ClearEntry {

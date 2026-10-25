@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include "gfx/capture.hpp"
 
 #ifdef KZ_PORT_TRACY
 #include <tracy/Tracy.hpp>
@@ -44,11 +45,9 @@ inline void SetEnabled(bool value) { enabled.store(value, std::memory_order_rela
     } while (false)
 #define KZ_PROFILE_GPU_END(slot) ::gfx::detail::g.slot.reset()
 #else
-#define KZ_PROFILE_ZONE(name)
+#define KZ_PROFILE_ZONE(name) ::gfx::capture::Scope kz_capture_zone(name)
 #define KZ_PROFILE_THREAD(name)
-#define KZ_PROFILE_PLOT(name, value) \
-    do {                             \
-    } while (false)
+#define KZ_PROFILE_PLOT(name, value) ::gfx::capture::Counter(name, double(value))
 #define KZ_PROFILE_GPU_ZONE(cmd, name)
 #define KZ_PROFILE_GPU_BEGIN(slot, cmd, name) \
     do {                                      \

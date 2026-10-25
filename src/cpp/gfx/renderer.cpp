@@ -658,6 +658,13 @@ void CreateFrames() {
         Check(vkAllocateCommandBuffers(g.device, &allocate, buffers), "vkAllocateCommandBuffers");
         frame.upload_cmd = buffers[0];
         frame.draw_cmd = buffers[1];
+        if (capture::Enabled() && g.properties.limits.timestampComputeAndGraphics) {
+            VkQueryPoolCreateInfo query{};
+            query.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            query.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            query.queryCount = 2;
+            Check(vkCreateQueryPool(g.device, &query, nullptr, &frame.capture_queries), "capture query pool");
+        }
 
         VkSemaphoreCreateInfo semaphore = {};
         semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -705,6 +712,12 @@ void WaitFrame(Frame &frame) {
         Check(vkWaitForFences(g.device, 1, &frame.fence, VK_TRUE, UINT64_MAX), "vkWaitForFences");
         frame.pending = false;
         HarvestDepthQueries(frame);
+        if(frame.capture_pending) {
+            uint64_t stamps[2]{};
+            if(vkGetQueryPoolResults(g.device,frame.capture_queries,0,2,sizeof(stamps),stamps,sizeof(uint64_t),VK_QUERY_RESULT_64_BIT)==VK_SUCCESS)
+                capture::Counter("gpu.draw_frame_us",double(stamps[1]-stamps[0])*g.properties.limits.timestampPeriod/1000.0);
+            frame.capture_pending=false;
+        }
     }
 }
 
@@ -1039,6 +1052,7 @@ void RendererShutdown() {
         DestroyTransients(frame);
         DestroyBuffer(frame.depth_readback);
         vkDestroyFence(g.device, frame.fence, nullptr);
+        if(frame.capture_queries)vkDestroyQueryPool(g.device,frame.capture_queries,nullptr);
         vkDestroySemaphore(g.device, frame.image_available, nullptr);
         vkDestroyCommandPool(g.device, frame.pool, nullptr);
     }
@@ -1098,6 +1112,10 @@ namespace {
 bool OpenFrame() {
     AssertDeviceThread(__func__);
     BeginCommands(CurrentFrame().draw_cmd);
+    if(auto pool=CurrentFrame().capture_queries) {
+        vkCmdResetQueryPool(CurrentFrame().draw_cmd,pool,0,2);
+        vkCmdWriteTimestamp(CurrentFrame().draw_cmd,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,pool,0);
+    }
 #ifdef KZ_PORT_TRACY
     // Reads back the GPU timestamps of earlier frames; nothing is recorded while profiling is off.
     if (g.tracy_vk != nullptr && profile::Enabled()) {
@@ -1187,6 +1205,7 @@ void PresentImage(Frame &frame, VkCommandBuffer cmd, Image &source) {
                      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
                      VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE);
     ToRest(cmd, source);
+    if(frame.capture_queries){vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,frame.capture_queries,1);frame.capture_pending=true;}
     Check(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
 
     VkSemaphore render_finished = g.swapchain.render_finished[g.image_index];
@@ -1226,6 +1245,8 @@ void SubmitWithoutPresent(VkCommandBuffer cmd, Image &main) {
     // Every colour image rests shader-readable between operations; the next frame samples this
     // one as kPreviousFrame.
     ToRest(cmd, main);
+    auto &captureFrame=CurrentFrame();
+    if(captureFrame.capture_queries){vkCmdWriteTimestamp(cmd,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,captureFrame.capture_queries,1);captureFrame.capture_pending=true;}
     Check(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
     Submit(true, VK_NULL_HANDLE, VK_NULL_HANDLE);
     g.in_frame = false;

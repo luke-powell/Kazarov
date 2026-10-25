@@ -1,9 +1,15 @@
 #version 460
 
-layout(location = 0) in vec3 a_position;
-layout(location = 1) in vec3 a_normal;
+layout(location = 0) in vec3 vertex_position;
+layout(location = 1) in vec3 vertex_normal;
 layout(location = 2) in vec2 a_uv;
-layout(location = 3) in vec4 a_color;
+layout(location = 3) in vec4 vertex_color;
+layout(location = 4) in vec3 instance_root;
+layout(location = 5) in vec3 instance_rotation;
+layout(location = 6) in vec4 instance_color;
+vec3 a_position,a_normal;
+vec4 a_color;
+vec2 tree_atlas_uv;
 
 layout(push_constant, std430) uniform Push {
     vec4 xform;
@@ -112,6 +118,53 @@ void atmosphere() {
 }
 
 void main() {
+    // Reject a whole tree using its conservative prototype sphere BEFORE the
+    // atmospheric integration. The test is identical for every vertex of an
+    // instance, so partially visible triangles never get torn apart. Trees
+    // below the existing zero-coverage threshold are already represented by
+    // canopy; this removes invisible work without shortening the LOD range.
+    if((mc.flags & (32768u|1024u))==(32768u|1024u) && mc.world_uv[1].z>0.0) {
+        float radius=mc.world_uv[1].z*instance_rotation.z;
+        vec4 centre=mc.mvp*vec4(instance_root,1.0);
+        mat4 rows=transpose(mc.mvp);
+        float rw=radius*length(rows[3].xyz);
+        bool outside=centre.w+rw<=0.0;
+        for(int axis=0;axis<2;axis++) {
+            outside=outside || centre[axis]+1.2*centre.w < -radius*length(rows[axis].xyz+1.2*rows[3].xyz);
+            outside=outside || 1.2*centre.w-centre[axis] < -radius*length(1.2*rows[3].xyz-rows[axis].xyz);
+        }
+        float height=round(instance_color.r*255.0)+256.0*round(instance_color.g*255.0);
+        if((mc.flags&262144u)==0u)outside=outside || height*mc.world_uv[0].z/max(centre.w-rw,1.0)<=0.15;
+        if((mc.flags&131072u)!=0u)outside=outside || height*mc.world_uv[0].z/max(centre.w-rw,1.0)<=2.0;
+        if((mc.flags&65536u)!=0u && (mc.flags&262144u)==0u)outside=outside || (centre.w>rw && height*mc.world_uv[0].z/(centre.w+rw)>=4.0);
+        if(outside) {
+            gl_Position=vec4(2.0,2.0,2.0,1.0);
+            gl_ClipDistance[0]=1.0;gl_ClipDistance[1]=1.0;
+            return;
+        }
+    }
+    a_position=vertex_position;a_normal=vertex_normal;a_color=vertex_color;
+    if((mc.flags & 32768u)!=0u){
+        float cs=instance_rotation.x,sn=instance_rotation.y,scale=instance_rotation.z;
+        a_position=instance_root+vec3(cs*vertex_position.x+sn*vertex_position.z,scale*vertex_position.y,-sn*vertex_position.x+cs*vertex_position.z);
+        a_normal=vec3((cs*vertex_normal.x+sn*vertex_normal.z)/scale,vertex_normal.y,(-sn*vertex_normal.x+cs*vertex_normal.z)/scale);
+        a_color=instance_color;
+        if((mc.flags&65536u)!=0u){
+            // Procedural corners keep the impostor independent of the source
+            // model's vertex attributes; the indexed quad is always 0..3.
+            vec2 corner=vec2((gl_VertexIndex&1)==0?-1.0:1.0,(gl_VertexIndex&2)==0?-1.0:1.0);
+            vec3 centre=instance_root+vec3(0.0,mc.world_uv[1].x*scale,0.0);
+            vec3 view=normalize(mc.clip_plane[0].xyz-centre);
+            vec3 right=normalize(vec3(view.z+0.000001,0.0,-view.x));
+            vec3 up=cross(view,right);
+            a_position=centre+mc.world_uv[1].y*scale*(right*corner.x+up*corner.y);
+            a_normal=vec3(0.0,1.0,0.0);
+            float yaw=atan(view.x,view.z)-atan(sn,cs);
+            float angle=mod(floor(yaw*(8.0/6.28318530718)+0.5),8.0);
+            float elevation=clamp(floor(asin(clamp(view.y,-1.0,1.0))*(2.0/1.57079632679)+0.5),0.0,2.0);
+            tree_atlas_uv=(vec2(angle,elevation)+vec2(corner.x+1.0,1.0-corner.y)*.5)/vec2(8.0,3.0);
+        }
+    }
     v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);
     v_tree_coverage=vec2(0.0,1.0);
     atmosphere();
@@ -128,6 +181,10 @@ void main() {
         clip.xy = ndc * clip.w;
     }
     gl_Position   = clip;
+    if((mc.flags & 16384u)!=0u) {
+        float d=length(a_position-mc.clip_plane[0].xyz);
+        v_tree_coverage=vec2(0.0,1.0-smoothstep(1500.0,2400.0,d));
+    }
     if((mc.flags & 1024u)!=0u) {
         float d=length(a_position-mc.clip_plane[0].xyz);
         float a=smoothstep(1800.0,2600.0,d),b=smoothstep(5000.0,7000.0,d);
@@ -146,7 +203,15 @@ void main() {
         float pixels=height*mc.world_uv[0].z/max(clip.w,1.0);
           float coverage=smoothstep(0.15,0.35,pixels)*mc.world_uv[0].w;
         v_tree_coverage=vec2(begin,begin+weights[level])*coverage;
+        float detail=smoothstep(2.0,4.0,pixels);
+        if((mc.flags&65536u)!=0u)v_tree_coverage=vec2(0.0,coverage*(1.0-detail));
+        if((mc.flags&131072u)!=0u)v_tree_coverage=vec2(coverage*(1.0-detail),coverage);
     }
+
+    // Ring ownership selects exactly one representation. Camera-relative
+    // fade thresholds must not erase that representation when looking down.
+    if((mc.flags&262144u)!=0u && (mc.flags&1024u)!=0u)
+        v_tree_coverage=vec2(0.0,1.0);
 
     gl_ClipDistance[0] = (mc.flags & kClip0) != 0u ? dot(mc.clip_plane[0], position) : 1.0;
     gl_ClipDistance[1] = (mc.flags & kClip1) != 0u ? dot(mc.clip_plane[1], position) : 1.0;
@@ -177,13 +242,16 @@ void main() {
         if ((mc.flags & 4096u)!=0u) {
             // Persistent forest ground coverage must not disappear while the
             // independent object queue is still generating visible trees.
-            v_color.a *= a_color.a*kModulate*(1.0-smoothstep(0.15,0.35,pixels));
+            v_color.a *= a_color.a*kModulate*(1.0-smoothstep(0.15,0.35,pixels)*mc.world_uv[0].w);
         } else {
             v_color.a *= (1.0-smoothstep(0.75,1.5,pixels))*mc.world_uv[0].w*(1.0-regional);
         }
     }
+    if((mc.flags&262144u)!=0u && (mc.flags&4096u)!=0u)
+        v_color.a=clamp(alpha/kModulate,0.0,1.0)*(1.0-mc.world_uv[0].w);
     v_uv    = (mc.flags & kWorldUv) != 0u ? vec2(dot(mc.world_uv[0], position), dot(mc.world_uv[1], position)) :
               (mc.flags & kScreenUv) != 0u ? clip.xy / clip.w * 0.5 + 0.5 + a_uv : a_uv;
+    if((mc.flags&65536u)!=0u)v_uv=tree_atlas_uv;
     if((mc.flags & 8192u)!=0u){
         v_terrain_uv=vec3(v_uv.x,a_position.y*mc.world_uv[0].x,v_uv.y);
         v_terrain_normal=a_normal;

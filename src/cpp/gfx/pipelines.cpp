@@ -398,12 +398,16 @@ void CreatePipelines() {
         {2, 0, VK_FORMAT_R8G8B8A8_UNORM,   offsetof(Vertex2D, color)},
         {3, 0, VK_FORMAT_R8_UNORM,         offsetof(Vertex2D, fog)  },
     };
-    VkVertexInputBindingDescription   binding_mesh = {0, sizeof(Vertex3D), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription attributes_mesh[4] = {
+    VkVertexInputBindingDescription bindings_mesh[2]={{0,sizeof(Vertex3D),VK_VERTEX_INPUT_RATE_VERTEX},{1,sizeof(Vertex3D),VK_VERTEX_INPUT_RATE_INSTANCE}};
+    VkVertexInputBindingDescription   binding_mesh = bindings_mesh[0];
+    VkVertexInputAttributeDescription attributes_mesh[7] = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex3D, position)},
         {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex3D, normal)  },
         {2, 0, VK_FORMAT_R32G32_SFLOAT,    offsetof(Vertex3D, uv)      },
         {3, 0, VK_FORMAT_R8G8B8A8_UNORM,   offsetof(Vertex3D, color)   },
+        {4, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex3D, position)},
+        {5, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex3D, normal)},
+        {6, 1, VK_FORMAT_R8G8B8A8_UNORM, offsetof(Vertex3D, color)},
     };
     VkPipelineVertexInputStateCreateInfo vertex_2d = {};
     vertex_2d.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -412,7 +416,9 @@ void CreatePipelines() {
     vertex_2d.vertexAttributeDescriptionCount = 4;
     vertex_2d.pVertexAttributeDescriptions = attributes_2d;
     VkPipelineVertexInputStateCreateInfo vertex_mesh = vertex_2d;
-    vertex_mesh.pVertexBindingDescriptions = &binding_mesh;
+    vertex_mesh.vertexBindingDescriptionCount=2;
+    vertex_mesh.vertexAttributeDescriptionCount=7;
+    vertex_mesh.pVertexBindingDescriptions = bindings_mesh;
     vertex_mesh.pVertexAttributeDescriptions = attributes_mesh;
 
     // mesh_prog0.vert always reads the skin at locations 4 and 5. Unskinned, they alias bytes of the
@@ -436,6 +442,8 @@ void CreatePipelines() {
         {5, 0, VK_FORMAT_R8G8B8A8_UINT,       sizeof(Vertex3D) + offsetof(Prog0Skin, bone)  },
     };
     VkPipelineVertexInputStateCreateInfo vertex_prog0 = vertex_mesh;
+    vertex_prog0.vertexBindingDescriptionCount=1;
+    vertex_prog0.pVertexBindingDescriptions=&binding_mesh;
     vertex_prog0.vertexAttributeDescriptionCount = 6;
     vertex_prog0.pVertexAttributeDescriptions = attributes_prog0;
     VkPipelineVertexInputStateCreateInfo vertex_skinned = vertex_prog0;

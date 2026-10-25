@@ -486,7 +486,8 @@ void BindVertices(VkBuffer buffer, VkDeviceSize offset) {
     if (g.bound.vertex_buffer != buffer || g.bound.vertex_offset != offset) {
         g.bound.vertex_buffer = buffer;
         g.bound.vertex_offset = offset;
-        vkCmdBindVertexBuffers(DrawCommands(), 0, 1, &buffer, &offset);
+        VkBuffer buffers[2]={buffer,buffer};VkDeviceSize offsets[2]={offset,offset};
+        vkCmdBindVertexBuffers(DrawCommands(), 0, 2, buffers, offsets);
     }
 }
 
@@ -1306,16 +1307,19 @@ void ReportPlainProg0Flag(const MeshConstants &constants) {
 // prog0 is the draw's Vu_prog0 block, or nullptr for a plain draw; palette is its Prog0Palette, or nullptr.
 void DrawIndexedMesh(MeshHandle handle, uint32_t first_index, uint32_t index_count, const MeshConstants &constants,
                      const Prog0Constants *prog0, const Prog0Palette *palette, const TextureBinding &binding,
-                     const DrawState &state, const MeshTransform *transform) {
+                     const DrawState &state, const MeshTransform *transform, MeshHandle instance_handle=0,uint32_t instance_count=1,uint32_t first_instance=0) {
     Mesh *mesh = LookupMesh(handle);
     if (mesh == nullptr || first_index + index_count > mesh->index_count) {
         Error("DrawMesh: bad mesh %#x or index range", handle);
         return;
     }
+    Mesh *instances=instance_handle?LookupMesh(instance_handle):nullptr;
+    if(instance_handle && (!instances || first_instance>instances->vertex_count || instance_count>instances->vertex_count-first_instance)){Error("DrawMeshInstanced: invalid instance range");return;}
     if (RecordingCalls()) {
         if (index_count != 0) {
-            RecordMesh(MeshEntry{handle, first_index, index_count, {}, {}, constants, binding, state, 0},
-                       transform, prog0, palette);
+            MeshEntry entry{handle, first_index, index_count, {}, {}, constants, binding, state, 0};
+            entry.instances=instance_handle;entry.instance_count=instance_count;entry.first_instance=first_instance;
+            RecordMesh(std::move(entry), transform, prog0, palette);
         }
         return;
     }
@@ -1330,10 +1334,14 @@ void DrawIndexedMesh(MeshHandle handle, uint32_t first_index, uint32_t index_cou
         BindConstants(PipelineLayoutOf(family), constants, family > kFamilyMesh ? prog0 : nullptr,
                       SkinnedPalette(family, palette));
         BindVertices(mesh->buffer.buffer, 0);
+        if(instances){
+            instances->last_draw_use=g.frame_serial;
+            VkDeviceSize offset=0;vkCmdBindVertexBuffers(cmd,1,1,&instances->buffer.buffer,&offset);
+        }
         vkCmdBindIndexBuffer(cmd, mesh->buffer.buffer, mesh->vertex_count * sizeof(Vertex3D),
                              VK_INDEX_TYPE_UINT32);
         g.counters.mesh_draws++;
-        vkCmdDrawIndexed(cmd, index_count, 1, first_index, 0, 0);
+        vkCmdDrawIndexed(cmd, index_count, instance_count, first_index, 0, first_instance);
     });
 }
 
@@ -1343,6 +1351,13 @@ void DrawMesh(MeshHandle handle, uint32_t first_index, uint32_t index_count, con
               const TextureBinding &binding, const DrawState &state, const MeshTransform *transform) {
     ReportPlainProg0Flag(constants);
     DrawIndexedMesh(handle, first_index, index_count, constants, nullptr, nullptr, binding, state, transform);
+}
+
+void DrawMeshInstanced(MeshHandle handle,uint32_t first_index,uint32_t index_count,MeshHandle instances,
+                       uint32_t instance_count,const MeshConstants &constants,const TextureBinding &binding,
+                       const DrawState &state,const MeshTransform *transform,uint32_t first_instance){
+    auto c=constants;c.flags|=kMeshInstanced;
+    DrawIndexedMesh(handle,first_index,index_count,c,nullptr,nullptr,binding,state,transform,instances,instance_count,first_instance);
 }
 
 void DrawMeshProg0(MeshHandle handle, uint32_t first_index, uint32_t index_count, const MeshConstants &constants,

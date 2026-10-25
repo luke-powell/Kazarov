@@ -400,7 +400,7 @@ bool SameHandedness(const Mat4 &a, const Mat4 &b) {
 
 bool SamePartGeometry(const MeshEntry &a, const MeshEntry &b, const MeshRecord &record,
                       const MeshRecord &earlier) {
-    if (a.mesh != b.mesh) {
+    if (a.mesh != b.mesh || a.instances != b.instances || a.instance_count != b.instance_count || a.first_instance != b.first_instance) {
         return false;
     }
     if (a.mesh != kNullMesh) {
@@ -1362,6 +1362,8 @@ void Replay(const DisplayList &list, bool canonical, const Overrides *overrides,
                         if (prog0 != nullptr) {
                             DrawMeshProg0(e.mesh, e.first_index, e.index_count, *constants, *prog0, binding, e.state,
                                           nullptr, palette);
+                        } else if(e.instances != kNullMesh) {
+                            DrawMeshInstanced(e.mesh,e.first_index,e.index_count,e.instances,e.instance_count,*constants,binding,e.state,nullptr,e.first_instance);
                         } else {
                             DrawMesh(e.mesh, e.first_index, e.index_count, *constants, binding, e.state);
                         }

@@ -156,6 +156,8 @@ struct DepthQuery {
 };
 
 struct Frame {
+    VkQueryPool capture_queries = VK_NULL_HANDLE;
+    bool capture_pending = false;
     VkCommandPool                      pool = VK_NULL_HANDLE;
     VkCommandBuffer                    upload_cmd = VK_NULL_HANDLE;
     VkCommandBuffer                    draw_cmd = VK_NULL_HANDLE;
