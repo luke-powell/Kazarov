@@ -74,6 +74,7 @@ layout(location = 5) out vec3 v_air_light;
 layout(location = 6) out vec2 v_tree_coverage;
 layout(location = 7) out vec3 v_terrain_uv;
 layout(location = 8) out vec3 v_terrain_normal;
+layout(location = 9) flat out uint v_terrain_native;
 out float gl_ClipDistance[2];
 
 // Integrate a plane-parallel atmosphere with exponential Rayleigh (8 km) and
@@ -165,7 +166,7 @@ void main() {
             tree_atlas_uv=(vec2(angle,elevation)+vec2(corner.x+1.0,1.0-corner.y)*.5)/vec2(8.0,3.0);
         }
     }
-    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);
+    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);v_terrain_native=(mc.flags & 524288u)!=0u ? 1u : 0u;
     v_tree_coverage=vec2(0.0,1.0);
     atmosphere();
     vec4 position = vec4(a_position, 1.0);
@@ -220,7 +221,10 @@ void main() {
     float alpha = mc.diffuse.a;
     if ((mc.flags & kShadow) == 0u) {
         if ((mc.flags & kLit) != 0u) {
-            vec3 normal = normalize(mc.normal_matrix * a_normal);
+            // Native terrain joins can carry interpolated authored normals:
+            // preserving their length preserves the original vertex lighting.
+            vec3 normal = mc.normal_matrix * a_normal;
+            if((mc.flags & 524288u)==0u)normal=normalize(normal);
             vec3 light  = vec3(0.0);
             for (uint i = 0u; i < min(mc.light_count, 4u); i++) {
                 light += max(dot(normal, -mc.light_direction[i].xyz), 0.0) * mc.light_color[i].rgb;

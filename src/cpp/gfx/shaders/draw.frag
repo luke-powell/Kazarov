@@ -37,6 +37,7 @@ layout(location = 5) in vec3 v_air_light;
 layout(location = 6) in vec2 v_tree_coverage;
 layout(location = 7) in vec3 v_terrain_uv;
 layout(location = 8) in vec3 v_terrain_normal;
+layout(location = 9) flat in uint v_terrain_native;
 
 layout(location = 0, index = 0) out vec4 o_color;
 layout(location = 0, index = 1) out vec4 o_factor;
@@ -115,6 +116,7 @@ vec4 TerrainTile(vec2 uv, vec2 cell, vec2 dx, vec2 dy) {
 }
 
 vec4 TerrainSample(vec2 uv) {
+    if(v_terrain_native!=0u)return kTextureMode==1?SampleRgba(uv):SamplePalette(uv);
     // Preserve the retail texel scale, but smoothly blend independent phase and
     // orientation over single-tile neighbourhoods. Mips suppress distant shimmer.
     vec2 cell=floor(uv), f=fract(uv);f=f*f*(3.0-2.0*f);

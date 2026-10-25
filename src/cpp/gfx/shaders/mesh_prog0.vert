@@ -149,9 +149,10 @@ layout(location = 5) out vec3 v_air_light;
 layout(location = 6) out vec2 v_tree_coverage;
 layout(location = 7) out vec3 v_terrain_uv;
 layout(location = 8) out vec3 v_terrain_normal;
+layout(location = 9) flat out uint v_terrain_native;
 
 void main() {
-    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);
+    v_terrain_uv=vec3(0.0);v_terrain_normal=vec3(0.0);v_terrain_native=0u;
     v_tree_coverage=vec2(0.0,1.0);
     v_air_transmission=vec3(1.0);v_air_light=vec3(0.0);
     uint F = p0.flags;
